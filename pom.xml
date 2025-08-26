@@ -1,27 +1,46 @@
-<project xmlns="http://maven.apache.org/POM/4.0.0" 
+<project xmlns="http://maven.apache.org/POM/4.0.0"
          xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
-         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0
-                             http://maven.apache.org/xsd/maven-4.0.0.xsd">
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
   <modelVersion>4.0.0</modelVersion>
   <groupId>demo</groupId>
   <artifactId>app</artifactId>
   <version>1.0.0</version>
+
   <properties>
-  	<project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
-  	<maven.compiler.release>17</maven.compiler.release>
+	  <project.build.sourceEncoding>UTF-8</project.build.sourceEncoding>
+	  <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
+    <maven.compiler.release>17</maven.compiler.release>
   </properties>
+
   <dependencies>
+    <!-- Needed for javax.servlet.http.* types at compile time -->
+    <dependency>
+      <groupId>javax.servlet</groupId>
+      <artifactId>javax.servlet-api</artifactId>
+      <version>4.0.1</version>
+      <scope>provided</scope>
+    </dependency>
+
+    <!-- Optional: just to have a JDBC driver available in the sample -->
+    <dependency>
+      <groupId>com.h2database</groupId>
+      <artifactId>h2</artifactId>
+      <version>2.2.224</version>
+      <scope>runtime</scope>
+    </dependency>
+    
     <!-- example runtime dep -->
     <dependency>
       <groupId>org.slf4j</groupId>
       <artifactId>slf4j-api</artifactId>
       <version>2.0.13</version>
     </dependency>
+    
     <dependency>
 	  <groupId>org.apache.logging.log4j</groupId>
 	  <artifactId>log4j-core</artifactId>
 	  <version>2.13.3</version> <!-- intentionally vulnerable -->
 	</dependency>
   </dependencies>
- 
+  
 </project>
