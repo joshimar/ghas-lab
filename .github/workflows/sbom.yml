@@ -76,5 +76,49 @@ jobs:
       - name: Per-file SPDX (exploded deps + app)
         uses: anchore/sbom-action@v0
         env:
-          # include ALL files, not just “owned-by-package” (the default)
+          # include ALL files, not just “owned-by-package”
           SYFT_FILE_METADATA_SELECTION: all
+        with:
+          path: target/
+          format: spdx-json
+          output-file: target/files.spdx.json
+          # keep args on one line to avoid YAML parsing surprises
+          args: --select-catalogers file-metadata-cataloger,archive-file-metadata-cataloger
+
+      # 7) Sanity checks (fail fast if no checksums present)
+      - name: Verify CycloneDX has component hashes
+        run: jq -e 'any(.components[]?; has("hashes"))' target/bom.json > /dev/null
+
+      - name: Verify SPDX has per-file .class checksums
+        run: jq -e 'any(.files[]?; (.fileName|endswith(".class")) and (.checksums|length>0))' target/files.spdx.json > /dev/null
+
+      # 8) Hash the SBOM files themselves (traceability)
+      - name: Create SHA-256 for SBOM files
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in target/bom.xml target/bom.json target/files.spdx.json; do
+            if [ -f "$f" ]; then sha256sum "$f" > "$f.sha256"; fi
+          done
+
+      # 9) Optional: export GitHub’s manifest-based SPDX (inventory only)
+      - name: Export SPDX from GitHub Dependency Graph
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/dependency-graph/sbom?ref=${{ github.sha }}" \
+            --jq '.sbom' > target/gh-depgraph.spdx.json
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sboms
+          path: |
+            target/bom.xml
+            target/bom.json
+            target/bom.xml.sha256
+            target/bom.json.sha256
+            target/files.spdx.json
+            target/files.spdx.json.sha256
+            target/gh-depgraph.spdx.json
