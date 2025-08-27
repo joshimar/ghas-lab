@@ -29,7 +29,7 @@ jobs:
       - name: Build (package)
         run: mvn -B -DskipTests clean package
 
-      # 2) CycloneDX SBOM (component/JAR-level hashes)
+      # 2) CycloneDX SBOM (component/JAR-level hashes in bom.json/xml)
       - name: Generate CycloneDX SBOM
         run: mvn -B org.cyclonedx:cyclonedx-maven-plugin:makeBom
 
@@ -75,6 +75,9 @@ jobs:
       # 6) Create an SPDX with checksums for EACH inner file (exploded dirs)
       - name: Per-file SPDX (exploded deps + app)
         uses: anchore/sbom-action@v0
+        env:
+          # include ALL files, not just “owned-by-package”
+          SYFT_FILE_METADATA_SELECTION: all
         with:
           path: target/
           format: spdx-json
@@ -86,8 +89,8 @@ jobs:
       - name: Verify CycloneDX has component hashes
         run: jq -e 'any(.components[]?; has("hashes"))' target/bom.json > /dev/null
 
-      - name: Verify SPDX has per-file checksums
-        run: jq -e 'any(.files[]?; .checksums and (.checksums|length>0))' target/files.spdx.json > /dev/null
+      - name: Verify SPDX has per-file .class checksums
+        run: jq -e 'any(.files[]?; (.fileName|endswith(".class")) and (.checksums|length>0))' target/files.spdx.json > /dev/null
 
       # 8) Hash the SBOM files themselves (traceability)
       - name: Create SHA-256 for SBOM files
