@@ -22,26 +22,100 @@ jobs:
           java-version: "17"
           cache: maven
 
-      # Build bytes so hashing works
+      - name: Ensure tools
+        run: sudo apt-get update && sudo apt-get install -y unzip jq
+
+      # 1) Build JAR so bytes exist to hash
       - name: Build (package)
         run: mvn -B -DskipTests clean package
 
-      # Component/JAR-level hashes (inside bom.json/xml -> components[].hashes[])
+      # 2) CycloneDX SBOM (component/JAR-level hashes)
       - name: Generate CycloneDX SBOM
         run: mvn -B org.cyclonedx:cyclonedx-maven-plugin:makeBom
 
       # ----- per-file digests start here -----
 
-      # Copy the exact deps your app resolved (runtime scope)
+      # 3) Copy the exact deps your app resolved (runtime scope)
       - name: Copy resolved dependencies
         run: mvn -B dependency:copy-dependencies -DincludeScope=runtime -DoutputDirectory=target/deps
 
-      # Explode your app JAR (so inner files can be hashed)
-      - name: Explode app JAR
+      # 4) Explode your app JAR(s) so inner files can be hashed
+      - name: Explode app JAR(s)
         shell: bash
         run: |
           set -euo pipefail
           mkdir -p target/app-exploded
-          # explode only your primary JAR(s)
-          for j in target/*.jar; do
-            [ -f "$j" ] && unzip -qq -o "$j" -d target/app-expl
+          shopt -s nullglob
+          jars=(target/*.jar)
+          if (( ${#jars[@]} )); then
+            for j in "${jars[@]}"; do
+              unzip -qq -o "$j" -d target/app-exploded
+            done
+          else
+            echo "No app JARs found under target/"
+          fi
+
+      # 5) Explode every dependency JAR into its own folder
+      - name: Explode dependency JARs
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p target/deps-exploded
+          if [ -d target/deps ]; then
+            find target/deps -type f -name '*.jar' -print0 | while IFS= read -r -d '' j; do
+              base="$(basename "$j" .jar)"
+              d="target/deps-exploded/$base"
+              mkdir -p "$d"
+              unzip -qq -o "$j" -d "$d"
+            done
+          else
+            echo "No target/deps directory found (did dependency:copy-dependencies run?)"
+          fi
+
+      # 6) Create an SPDX with checksums for EACH inner file (exploded dirs)
+      - name: Per-file SPDX (exploded deps + app)
+        uses: anchore/sbom-action@v0
+        with:
+          path: target/
+          format: spdx-json
+          output-file: target/files.spdx.json
+          # keep args on one line to avoid YAML parsing surprises
+          args: --select-catalogers file-metadata-cataloger,archive-file-metadata-cataloger
+
+      # 7) Sanity checks (fail fast if no checksums present)
+      - name: Verify CycloneDX has component hashes
+        run: jq -e 'any(.components[]?; has("hashes"))' target/bom.json > /dev/null
+
+      - name: Verify SPDX has per-file checksums
+        run: jq -e 'any(.files[]?; .checksums and (.checksums|length>0))' target/files.spdx.json > /dev/null
+
+      # 8) Hash the SBOM files themselves (traceability)
+      - name: Create SHA-256 for SBOM files
+        shell: bash
+        run: |
+          set -euo pipefail
+          for f in target/bom.xml target/bom.json target/files.spdx.json; do
+            if [ -f "$f" ]; then sha256sum "$f" > "$f.sha256"; fi
+          done
+
+      # 9) Optional: export GitHub’s manifest-based SPDX (inventory only)
+      - name: Export SPDX from GitHub Dependency Graph
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -H "Accept: application/vnd.github+json" \
+            "/repos/${{ github.repository }}/dependency-graph/sbom?ref=${{ github.sha }}" \
+            --jq '.sbom' > target/gh-depgraph.spdx.json
+
+      - name: Upload SBOM artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: sboms
+          path: |
+            target/bom.xml
+            target/bom.json
+            target/bom.xml.sha256
+            target/bom.json.sha256
+            target/files.spdx.json
+            target/files.spdx.json.sha256
+            target/gh-depgraph.spdx.json
