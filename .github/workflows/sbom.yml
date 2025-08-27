@@ -19,7 +19,7 @@ jobs:
         uses: actions/setup-java@v4
         with:
           distribution: temurin
-          java-version: '17'
+          java-version: "17"
           cache: maven
 
       # Build bytes so hashing works
@@ -44,65 +44,4 @@ jobs:
           mkdir -p target/app-exploded
           # explode only your primary JAR(s)
           for j in target/*.jar; do
-            [ -f "$j" ] && unzip -qq -o "$j" -d target/app-exploded
-          done
-
-      # Explode every dependency JAR
-      - name: Explode dependency JARs
-        shell: bash
-        run: |
-          set -euo pipefail
-          mkdir -p target/deps-exploded
-          find target/deps -name '*.jar' -print0 | while IFS= read -r -d '' j; do
-            d="target/deps-exploded/$(basename "$j" .jar)"
-            mkdir -p "$d"
-            unzip -qq -o "$j" -d "$d"
-          done
-
-      # Create an SPDX with checksums for EACH inner file
-      - name: Per-file SPDX (exploded deps + app)
-        uses: anchore/sbom-action@v0
-        with:
-          path: |
-            target/deps-exploded
-            target/app-exploded
-          format: spdx-json
-          output-file: target/files.spdx.json
-
-      # Sanity checks (fail if no checksums present)
-      - name: Verify CycloneDX has component hashes
-        run: jq -e 'any(.components[]?; has("hashes"))' target/bom.json > /dev/null
-
-      - name: Verify SPDX has per-file checksums
-        run: jq -e 'any(.files[]?; .checksums and (.checksums|length>0))' target/files.spdx.json > /dev/null
-
-      # Hash the SBOM files themselves (traceability)
-      - name: Create SHA-256 for SBOM files
-        shell: bash
-        run: |
-          set -euo pipefail
-          for f in target/bom.xml target/bom.json target/files.spdx.json; do
-            [ -f "$f" ] && sha256sum "$f" > "$f.sha256"
-          done
-
-      # Optional: export GitHub’s manifest-based SPDX (inventory only)
-      - name: Export SPDX from GitHub Dependency Graph
-        env:
-          GH_TOKEN: ${{ github.token }}
-        run: |
-          gh api -H "Accept: application/vnd.github+json" \
-            "/repos/${{ github.repository }}/dependency-graph/sbom?ref=${{ github.sha }}" \
-            --jq '.sbom' > target/gh-depgraph.spdx.json
-
-      - name: Upload SBOM artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: sboms
-          path: |
-            target/bom.xml
-            target/bom.json
-            target/bom.xml.sha256
-            target/bom.json.sha256
-            target/files.spdx.json
-            target/files.spdx.json.sha256
-            target/gh-depgraph.spdx.json
+            [ -f "$j" ] && unzip -qq -o "$j" -d target/app-expl
