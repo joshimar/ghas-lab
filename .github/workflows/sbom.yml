@@ -1,0 +1,39 @@
+# .github/workflows/sbom.yml
+name: Build + SBOMs
+on:
+  push: { branches: ["main"] }
+  pull_request: { branches: ["main"] }
+
+permissions:
+  contents: read
+
+jobs:
+  sbom:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+          cache: maven
+
+      # Runs CycloneDX plugin you added in the POM (phase: verify)
+      - run: mvn -B -DskipTests clean verify
+
+      # Export GitHub's SPDX SBOM for this commit
+      - name: Export SPDX SBOM from GitHub
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh api -H "Accept: application/vnd.github+json" \
+            /repos/${{ github.repository }}/dependency-graph/sbom?ref=${{ github.sha }} \
+            --jq '.sbom' > target/sbom.spdx.json
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: sboms
+          path: |
+            target/bom.json
+            target/bom.xml
+            target/sbom.spdx.json
